@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oritypo-solver"
+version = "0.1.0"
+description = "oritypo-solver — Oriradar typosquat scan API (Python + DNS; Rust orifold for permutations)."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "dnspython>=2.7",
+  "pydantic>=2.10",
+  "httpx>=0.28",
+  "redis>=7.4.0",
+  "beautifulsoup4>=4.14.3",
+  "playwright>=1.58.0",
+]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.28", "ruff>=0.8"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["oritypo_solver*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

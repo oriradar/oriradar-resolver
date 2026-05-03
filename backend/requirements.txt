@@ -1,0 +1,11 @@
+# Install without editable mode: pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.32
+dnspython>=2.7
+pydantic>=2.10
+httpx>=0.28
+redis>=7.4.0
+beautifulsoup4>=4.14.3
+playwright>=1.58.0
+sentence-transformers>=3.4
+mmh3>=5.1

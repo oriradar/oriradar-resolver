@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+README.md
+docs/
+frontend/
+supabase/
+backend/.venv/
+backend/tests/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd

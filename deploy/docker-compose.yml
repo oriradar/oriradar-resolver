@@ -1,0 +1,180 @@
+# Oriradar scan stack — Caddy + Redis + oritypo-solver (style ail-typo on VPS)
+# From this directory: docker compose up -d --build
+
+x-api-env: &api-env
+  REDIS_URL: redis://redis:6379/0
+  ORIFOLD_PATH: /usr/local/bin/orifold
+  ORISEEK_PATH: /usr/local/bin/oriseek
+  ORI_MAX_VARIANTS: ${ORI_MAX_VARIANTS:-500}
+  ORI_DNS_CONCURRENCY: ${ORI_DNS_CONCURRENCY:-256}
+  ORI_DNS_TIMEOUT_MS: ${ORI_DNS_TIMEOUT_MS:-2000}
+  ORI_DNS_BATCH_SIZE: ${ORI_DNS_BATCH_SIZE:-128}
+  ORI_DNS_RUST_MIN_BATCH: ${ORI_DNS_RUST_MIN_BATCH:-32}
+  ORI_HTTP_MAX_PROBES: ${ORI_HTTP_MAX_PROBES:-25}
+  ORI_HTTP_TIMEOUT: ${ORI_HTTP_TIMEOUT:-4}
+  ORI_HTTP_CONCURRENCY: ${ORI_HTTP_CONCURRENCY:-25}
+  ORI_HTTP_CONNECT_TIMEOUT: ${ORI_HTTP_CONNECT_TIMEOUT:-1.5}
+  ORI_HTTP_READ_TIMEOUT: ${ORI_HTTP_READ_TIMEOUT:-3.5}
+  ORI_ENABLE_RDAP: ${ORI_ENABLE_RDAP:-0}
+  ORI_RDAP_MAX_LOOKUPS: ${ORI_RDAP_MAX_LOOKUPS:-10}
+  ORI_RDAP_TIMEOUT: ${ORI_RDAP_TIMEOUT:-4}
+  ORI_QUEUE_POP_TIMEOUT: ${ORI_QUEUE_POP_TIMEOUT:-5}
+  ORI_WORKER_HEARTBEAT_TTL: ${ORI_WORKER_HEARTBEAT_TTL:-120}
+  ORI_WEBHOOK_URL: ${ORI_WEBHOOK_URL:-}
+  ORI_ENABLE_SCREENSHOTS: ${ORI_ENABLE_SCREENSHOTS:-1}
+  ORI_ENABLE_CRAWL: ${ORI_ENABLE_CRAWL:-1}
+  ORI_SCREENSHOT_MAX_JOBS: ${ORI_SCREENSHOT_MAX_JOBS:-5}
+  ORI_SCREENSHOT_SCORE_THRESHOLD: ${ORI_SCREENSHOT_SCORE_THRESHOLD:-75}
+  ORI_SCREENSHOT_PREDICTION_THRESHOLD: ${ORI_SCREENSHOT_PREDICTION_THRESHOLD:-80}
+  ORI_SCREENSHOT_PARKING_PREDICTION_THRESHOLD: ${ORI_SCREENSHOT_PARKING_PREDICTION_THRESHOLD:-85}
+  ORI_SCREENSHOT_DIR: ${ORI_SCREENSHOT_DIR:-/data/screenshots}
+  ORI_CRAWL_MAX_JOBS: ${ORI_CRAWL_MAX_JOBS:-8}
+  ORI_CRAWL_SCORE_THRESHOLD: ${ORI_CRAWL_SCORE_THRESHOLD:-55}
+  ORI_CRAWL_PREDICTION_THRESHOLD: ${ORI_CRAWL_PREDICTION_THRESHOLD:-65}
+  ORI_CRAWL_TIMEOUT: ${ORI_CRAWL_TIMEOUT:-5}
+  ORI_CRAWL_MAX_PAGES: ${ORI_CRAWL_MAX_PAGES:-12}
+  ORI_CRAWL_MAX_DEPTH: ${ORI_CRAWL_MAX_DEPTH:-2}
+  ORI_CRAWL_MAX_LINKS_PER_PAGE: ${ORI_CRAWL_MAX_LINKS_PER_PAGE:-35}
+  ORI_CRAWL_MAX_HTML_BYTES: ${ORI_CRAWL_MAX_HTML_BYTES:-200000}
+  ORI_CRAWL_SNIPPET_CHARS: ${ORI_CRAWL_SNIPPET_CHARS:-1200}
+  ORI_DIGEST_INTERVAL_S: ${ORI_DIGEST_INTERVAL_S:-3600}
+  ORI_DIGEST_LOOKBACK_HOURS: ${ORI_DIGEST_LOOKBACK_HOURS:-24}
+  ORI_DIGEST_TOP_N: ${ORI_DIGEST_TOP_N:-20}
+  ORI_DIGEST_WEBHOOK_URL: ${ORI_DIGEST_WEBHOOK_URL:-}
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment: *api-env
+    volumes:
+      - screenshots-data:${ORI_SCREENSHOT_DIR:-/data/screenshots}
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      ORI_WORKER_NAME: scan-worker
+    command: ["python", "-m", "oritypo_solver.worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "oritypo_solver.worker_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  oriframe:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.oriframe
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      ORI_WORKER_NAME: oriframe-worker
+    volumes:
+      - screenshots-data:${ORI_SCREENSHOT_DIR:-/data/screenshots}
+    healthcheck:
+      test: ["CMD", "python", "-m", "oritypo_solver.worker_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  oricrawl:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      ORI_WORKER_NAME: oricrawl-worker
+    command: ["python", "-m", "oritypo_solver.oricrawl_worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "oritypo_solver.worker_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  oridigest:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      ORI_WORKER_NAME: oridigest-worker
+    command: ["python", "-m", "oritypo_solver.oridigest_worker"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "oritypo_solver.worker_health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      ORI_CADDY_ADDRESS: ${ORI_CADDY_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:
+  screenshots-data:

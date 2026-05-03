@@ -1,0 +1,7 @@
+# Reverse proxy for oritypo-solver.
+# Default: HTTP on :80 for local tests.
+# VPS: set ORI_CADDY_ADDRESS=scan.example.com for automatic HTTPS.
+
+{$ORI_CADDY_ADDRESS::80} {
+	reverse_proxy api:8000
+}
